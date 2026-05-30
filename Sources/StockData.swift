@@ -167,10 +167,8 @@ final class StockDataClient {
             return Self.defaultCodes
         }
 
-        let codes = content
-            .components { character in
-                character == "," || character == "\n" || character == "\r" || character == "\t" || character == " "
-            }
+        let separated = content.components(separatedBy: CharacterSet(charactersIn: ",\n\r\t "))
+        let codes = separated
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty }
 
