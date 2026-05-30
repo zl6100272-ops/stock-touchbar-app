@@ -172,14 +172,6 @@ final class MenuBarController: NSObject {
         return menu
     }
 
-    func updateMenu() {
-        // Will be reflected on next menu open (buildMenu is called each time)
-        if let button = statusItem.button, !snapshot.quotes.isEmpty {
-            let pinIndicator = isPinned() ? " 🔒" : ""
-            button.toolTip = "Stock Touch Bar\(pinIndicator) — Cmd+Shift+S to pin"
-        }
-    }
-
     private func pinTitle() -> String {
         isPinned() ? "☑ Unpin Touch Bar" : "☐ Pin Touch Bar"
     }
