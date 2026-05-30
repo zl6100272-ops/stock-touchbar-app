@@ -5,11 +5,18 @@ final class MenuBarController: NSObject {
     private var snapshot = StockSnapshot(quotes: [], fetchedAt: Date(), isCached: false)
     private let onRefreshRequested: () -> Void
     private let onActivateRequested: () -> Void
+    private let onPinToggle: () -> Void
+    private let isPinned: () -> Bool
 
-    init(onRefreshRequested: @escaping () -> Void, onActivateRequested: @escaping () -> Void) {
+    init(onRefreshRequested: @escaping () -> Void,
+         onActivateRequested: @escaping () -> Void,
+         onPinToggle: @escaping () -> Void,
+         isPinned: @escaping () -> Bool) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.onRefreshRequested = onRefreshRequested
         self.onActivateRequested = onActivateRequested
+        self.onPinToggle = onPinToggle
+        self.isPinned = isPinned
         super.init()
 
         if let button = statusItem.button {
@@ -59,6 +66,11 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
+        let pinItem = NSMenuItem(title: pinTitle(), action: #selector(togglePin(_:)), keyEquivalent: "s")
+        pinItem.keyEquivalentModifierMask = [.command, .shift]
+        pinItem.target = self
+        menu.addItem(pinItem)
+
         let refresh = NSMenuItem(title: "Refresh Now", action: #selector(refreshNow(_:)), keyEquivalent: "r")
         refresh.target = self
         menu.addItem(refresh)
@@ -74,6 +86,22 @@ final class MenuBarController: NSObject {
         menu.addItem(quit)
 
         return menu
+    }
+
+    func updateMenu() {
+        // Will be reflected on next menu open (buildMenu is called each time)
+        if let button = statusItem.button, !snapshot.quotes.isEmpty {
+            let pinIndicator = isPinned() ? " 🔒" : ""
+            button.toolTip = "Stock Touch Bar\(pinIndicator) — Cmd+Shift+S to pin"
+        }
+    }
+
+    private func pinTitle() -> String {
+        isPinned() ? "☑ Unpin Touch Bar" : "☐ Pin Touch Bar"
+    }
+
+    @objc private func togglePin(_ sender: NSMenuItem) {
+        onPinToggle()
     }
 
     @objc private func refreshNow(_ sender: NSMenuItem) {
