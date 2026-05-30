@@ -7,6 +7,10 @@ final class MenuBarController: NSObject {
     private let onActivateRequested: () -> Void
     private let onPinToggle: () -> Void
     private let isPinned: () -> Bool
+    private var tickerTimer: Timer?
+    private var tickerIndex = 0
+    private var tickerEnabled = true
+    private var lastTrendColor = NSColor.systemGray
 
     init(onRefreshRequested: @escaping () -> Void,
          onActivateRequested: @escaping () -> Void,
@@ -29,9 +33,84 @@ final class MenuBarController: NSObject {
 
     func update(snapshot: StockSnapshot) {
         self.snapshot = snapshot
+        lastTrendColor = trendColor(for: snapshot)
+        updateDisplay()
+    }
+
+    private func updateDisplay() {
+        guard let button = statusItem.button else { return }
+
+        if tickerEnabled && !snapshot.quotes.isEmpty {
+            startTicker()
+        } else {
+            stopTicker()
+            button.attributedTitle = attributedStatusTitle(summary: snapshot.summary, trendColor: lastTrendColor)
+        }
+        let pinIndicator = isPinned() ? " 🔒" : ""
+        button.toolTip = "Stock Touch Bar\(pinIndicator)"
+    }
+
+    private func startTicker() {
+        guard tickerTimer == nil || !(tickerTimer?.isValid ?? false) else { return }
+        tickerIndex = 0
+        tickTock()
+        tickerTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+            self?.tickTock()
+        }
+        if let timer = tickerTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    private func stopTicker() {
+        tickerTimer?.invalidate()
+        tickerTimer = nil
+    }
+
+    private func tickTock() {
+        guard let button = statusItem.button else { return }
+        let quotes = snapshot.quotes
+        guard !quotes.isEmpty else {
+            button.attributedTitle = attributedStatusTitle(summary: snapshot.summary, trendColor: lastTrendColor)
+            tickerIndex = 0
+            return
+        }
+
+        let totalItems = 1 + quotes.count  // summary + each stock
+        if tickerIndex == 0 {
+            // Show summary
+            button.attributedTitle = attributedStatusTitle(summary: snapshot.summary, trendColor: lastTrendColor)
+        } else {
+            // Show individual stock
+            let idx = tickerIndex - 1
+            guard idx < quotes.count else {
+                tickerIndex = 0
+                tickTock()
+                return
+            }
+            let quote = quotes[idx]
+            let color: NSColor = quote.isDown ? .systemRed : (quote.isUp ? .systemGreen : .secondaryLabelColor)
+            let maxNameLen = 4
+            let name = quote.name.count > maxNameLen ? String(quote.name.prefix(maxNameLen)) : quote.name
+            let changeStr = String(format: "%+.2f", quote.changePercent)
+            let tickerText = "\(name) \(quote.price) \(changeStr)"
+            let title = NSMutableAttributedString(string: "● ", attributes: [
+                .foregroundColor: color,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            ])
+            title.append(NSAttributedString(string: tickerText, attributes: [
+                .foregroundColor: NSColor.labelColor,
+                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            ]))
+            button.attributedTitle = title
+        }
+        tickerIndex = (tickerIndex + 1) % totalItems
+    }
+
+    func updateMenu() {
         if let button = statusItem.button {
-            button.attributedTitle = attributedStatusTitle(summary: snapshot.summary, trendColor: trendColor(for: snapshot))
-            button.toolTip = snapshot.isCached ? "Stock Touch Bar - cached quotes" : "Stock Touch Bar"
+            let pinIndicator = isPinned() ? " 🔒" : ""
+            button.toolTip = "Stock Touch Bar\(pinIndicator)"
         }
     }
 
@@ -71,6 +150,11 @@ final class MenuBarController: NSObject {
         pinItem.target = self
         menu.addItem(pinItem)
 
+        let tickerItem = NSMenuItem(title: tickerTitle(), action: #selector(toggleTicker(_:)), keyEquivalent: "t")
+        tickerItem.keyEquivalentModifierMask = [.command, .shift]
+        tickerItem.target = self
+        menu.addItem(tickerItem)
+
         let refresh = NSMenuItem(title: "Refresh Now", action: #selector(refreshNow(_:)), keyEquivalent: "r")
         refresh.target = self
         menu.addItem(refresh)
@@ -100,8 +184,24 @@ final class MenuBarController: NSObject {
         isPinned() ? "☑ Unpin Touch Bar" : "☐ Pin Touch Bar"
     }
 
+    private func tickerTitle() -> String {
+        tickerEnabled ? "☑ Menu Ticker On" : "☐ Menu Ticker Off"
+    }
+
     @objc private func togglePin(_ sender: NSMenuItem) {
         onPinToggle()
+    }
+
+    @objc private func toggleTicker(_ sender: NSMenuItem) {
+        tickerEnabled.toggle()
+        if !tickerEnabled {
+            stopTicker()
+            if let button = statusItem.button {
+                button.attributedTitle = attributedStatusTitle(summary: snapshot.summary, trendColor: lastTrendColor)
+            }
+        } else {
+            startTicker()
+        }
     }
 
     @objc private func refreshNow(_ sender: NSMenuItem) {
